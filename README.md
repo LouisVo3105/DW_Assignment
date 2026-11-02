@@ -1,39 +1,92 @@
-# 🚦 Hệ thống Kho Dữ liệu Giao thông Mỹ & Dự báo Tắc nghẽn
+# US Traffic Congestion Analytics & Data Warehouse
+
+**Data Warehousing · ETL · BI Visualization · Machine Learning**
+
+Dự án xây dựng quy trình dữ liệu phân tích giao thông Hoa Kỳ, từ nạp và chuẩn hóa dữ liệu đến kho dữ liệu dạng star schema, trực quan hóa chỉ số ùn tắc và thử nghiệm mô hình phân loại.
+
+## Dự án trong một phút
+
+- **Mục tiêu:** tổ chức dữ liệu sự kiện giao thông để phân tích theo thời gian, vị trí và điều kiện thời tiết.
+- **Dữ liệu:** bộ dữ liệu giao thông Hoa Kỳ giai đoạn 2016–2022. Project mô tả nguồn là mẫu 2 triệu bản ghi; repository hiện chứa các bảng CSV đã chuẩn bị, không bao gồm toàn bộ dữ liệu thô.
+- **Pipeline:** PostgreSQL staging → Pentaho Data Integration → MS SQL Server Data Warehouse.
+- **Phân tích:** dashboard BI, Python notebooks và thử nghiệm phân loại ba mức congestion bằng XGBoost và MLP.
+- **Ứng dụng:** Streamlit dashboard và trang demo dự đoán.
+
+## Quy trình ETL
+
+### Nạp CSV vào staging
+
+Transform đầu tiên lấy dữ liệu từ CSV gốc và ghi vào bảng staging trong PostgreSQL.
+
+![Pentaho: nạp CSV vào staging](<REPORT/Load-Stagging.png>)
+
+### Nạp các dimension
+
+Sau khi đọc dữ liệu staging, pipeline chọn trường, tính toán các thuộc tính dẫn xuất và phân nhánh để nạp dimension vị trí, thời tiết và thời gian.
+
+![Pentaho: nạp các bảng dimension](<REPORT/Load-to-Dim.png>)
+
+### Nạp bảng fact
+
+Pipeline fact tra cứu các khóa dimension theo location, weather và time, sau đó ghi các số đo cùng khóa vào bảng fact.
+
+![Pentaho: tra cứu dimension và nạp fact](<REPORT/Stagging-to-DW.png>)
+
+### Mô hình dữ liệu
+
+`FactAccident` lưu các số đo và thuộc tính sự kiện như `severity`, `distance_mi`, thời gian trễ và `congestion_speed`. Các bảng `DimLocation`, `DimWeather`, `DimTime` cung cấp các chiều phân tích để tổng hợp theo địa điểm, thời tiết và thời gian.
+
+```text
+                   ┌────────────────┐
+                   │  DimLocation   │
+                   └───────┬────────┘
+                           │
+┌──────────────┐   ┌───────▼────────┐   ┌──────────────┐
+│  DimWeather  ├──►│  FactAccident  │◄──┤   DimTime    │
+└──────────────┘   └────────────────┘   └──────────────┘
+```
+
+## Trực quan hóa và phân tích
+
+### Phân bố sự kiện theo địa lý
+
+Bản đồ thể hiện các vị trí có sự kiện tắc nghẽn. Các cụm điểm tập trung tại nhiều khu vực đô thị và hành lang giao thông của Hoa Kỳ.
+
+![Bản đồ vị trí các sự kiện giao thông](<REPORT/Phân bố  mật độ tắt nghẽn.png>)
+
+### Biểu đồ BI về trễ và congestion
+
+Hình BI trong báo cáo tổng hợp thời gian trễ theo ngày, so sánh delay per mile và delay ratio giữa các nhãn `congestion_speed`, đồng thời hiển thị tổng `dist_freeflow` và chỉ số thời tiết theo tháng.
+
+![Dashboard các chỉ số liên quan đến congestion](<REPORT/Các ảnh hưởng với tốc độ tắt nghẽn.png>)
 
 
-## 1. 🎯 Vấn đề cần giải quyết
-Tắc nghẽn giao thông là một thách thức nghiêm trọng trong quá trình đô thị hóa, gây thiệt hại hàng trăm tỷ USD mỗi năm, làm tăng lượng khí thải và giảm chất lượng cuộc sống. 
-Thách thức đặt ra là làm thế nào để thu thập, lưu trữ và phân tích hiệu quả một lượng dữ liệu giao thông khổng lồ nhằm thấu hiểu các quy luật tắc nghẽn. Dự án này nhằm mục đích xây dựng một Kho dữ liệu (Data Warehouse) và Hệ hỗ trợ quyết định (DSS) mạnh mẽ, giúp các hệ thống Giao thông thông minh (ITS) điều tiết phương tiện và quy hoạch hạ tầng dựa trên dữ liệu thực tế.
+## Thử nghiệm Machine Learning
 
-## 2. 🗂 Dữ liệu đầu vào
-Dự án sử dụng bộ dữ liệu **"US Traffic Congestions (2016-2022)"**. 
-* **Khối lượng:** Tập mẫu gồm 2 triệu bản ghi (được trích xuất từ tập dữ liệu gốc 33 triệu bản ghi).
-* **Dữ liệu Không gian:** Vĩ độ, Kinh độ, Đường, Thành phố, Bang, Mã bưu chính.
-* **Dữ liệu Thời gian:** Thời gian bắt đầu/kết thúc, Múi giờ địa phương.
-* **Dữ liệu Khí tượng:** Nhiệt độ, Độ ẩm, Lượng mưa, Tốc độ gió, Điều kiện thời tiết.
-* **Chỉ số Giao thông:** Mức độ nghiêm trọng, Quãng đường bị ảnh hưởng, Độ trễ so với thông thường, Tốc độ lưu thông khi tắc nghẽn.
+Hai notebook xây dựng mô hình phân loại ba mức độ congestion. Kết quả dưới đây được đọc từ output đã lưu trong notebook, trên tập holdout 200 quan sát:
 
-## 3. 🛠 Phương pháp & Cách tiếp cận
-Để chuyển hóa dữ liệu thô thành các insight có giá trị, dự án được triển khai qua một quy trình khép kín:
+| Mô hình | Accuracy | Macro F1 | Weighted F1 |
+|---|---:|---:|---:|
+| XGBoost | 0.650 | 0.640 | 0.65 |
+| MLP (PyTorch) | 0.575 | 0.566 | 0.58 |
 
-* **Trích xuất & Đưa dữ liệu vào Staging:** Đưa toàn bộ dữ liệu thô vào khu vực Staging sử dụng cơ sở dữ liệu **PostgreSQL**.
-* **Xây dựng ETL Pipeline (Vai trò cốt lõi):** Thiết kế luồng dữ liệu tự động bằng **Pentaho Data Integration**. Áp dụng các quy tắc làm sạch nghiêm ngặt như điền khuyết dữ liệu thời tiết dựa trên không gian/thời gian và chuẩn hóa định dạng địa lý.
-* **Mô hình hóa Kho dữ liệu:** Xây dựng kiến trúc **Star Schema** trên **MS SQL Server**. Lược đồ xoay quanh bảng trung tâm `FactAccident` và các bảng chiều (`DimTime`, `DimLocation`, `DimWeather`, `dim_season`) để tối ưu hóa các truy vấn phân tích đa chiều (OLAP).
-* **Phân tích Khám phá (EDA):** Truy vấn từ Data Marts để phân tích phân phối và ma trận tương quan, qua đó trực quan hóa các xu hướng không gian - thời gian.
-* **Machine Learning:** Nhóm áp dụng các thuật toán tiên tiến (XGBoost và Mạng nơ-ron đa lớp - MLP) để dự báo mức độ tắc nghẽn và tìm ra các mối quan hệ phi tuyến phức tạp.
+Trong lần chạy được lưu, XGBoost đạt điểm cao hơn MLP. Tập holdout nhỏ nên kết quả này chỉ phản ánh lần thử nghiệm trong notebook; cần đánh giá trên dữ liệu mới và đại diện hơn trước khi cân nhắc triển khai.
 
-## 4. 🏆 Kết quả đạt được
-Dự án đã triển khai thành công một luồng dữ liệu hoàn chỉnh và các công cụ hỗ trợ quyết định:
-1. **Kho dữ liệu tập trung:** Một Data Warehouse chuẩn Star Schema có khả năng xử lý hàng triệu bản ghi với hiệu suất truy vấn cao.
-2. **Dashboard DSS tương tác:** Phát triển giao diện web bằng **Streamlit** giúp trực quan hóa số liệu giao thông, phân bố thời tiết và xu hướng tắc nghẽn theo giờ.
-3. **Mô hình dự báo hiệu suất cao:** Triển khai mô hình **XGBoost Classifier** vượt trội hơn so với phương pháp Deep Learning (MLP), đạt **Độ chính xác tổng thể 76.66%** và **F1-Score cân bằng ở mức 0.77** trên nhiều lớp tắc nghẽn khác nhau.
 
-## 5. 💡 Insight & Đề xuất
-### Insight từ Dữ liệu
-* **Động lực Phi tuyến tính:** Phân tích khám phá chứng minh rằng tắc nghẽn giao thông gần như không có tương quan tuyến tính với các chỉ số thời tiết đơn lẻ (như nhiệt độ hay lượng mưa). Tắc nghẽn là kết quả của những tương tác phi tuyến phức tạp.
-* **Độ quan trọng của Đặc trưng:** Các yếu tố hạ tầng không gian - thời gian (đặc điểm tuyến đường, khoảng cách, giờ trong ngày) có tác động đến tốc độ ùn tắc lớn hơn nhiều so với chỉ riêng các sự kiện thời tiết.
+## Công nghệ
 
-### Đề xuất Hành động
-* **Dành cho Quản lý Giao thông:** Các nhà quy hoạch nên ưu tiên theo dõi hạ tầng và điều phối tuyến đường theo thời gian thực thay vì chỉ dựa vào các cảnh báo thời tiết thuần túy.
-* **Phát triển Hệ thống:** Để đáp ứng yêu cầu độ trễ thấp (dưới 1 giây) khi triển khai trên các thiết bị biên như camera thông minh, mô hình dự báo cần áp dụng các kỹ thuật Nén (Quantization) hoặc Cắt tỉa (Pruning). 
-* **Cải tiến Thuật toán:** Trong tương lai, nên chuyển từ mô hình dạng bảng sang kiến trúc Chuỗi thời gian (như LSTM hoặc Transformers) để nắm bắt tính kế thừa liên tục của các vụ tắc nghẽn.
+`SQL` · `PostgreSQL` · `Microsoft SQL Server` · `Pentaho Data Integration` · `Python` · `Pandas` · `scikit-learn` · `XGBoost` · `PyTorch` · `Streamlit`
+
+## Tài liệu
+
+- [Báo cáo Data Warehouse](REPORT/Data_Warehouse_Report.pdf)
+- [Slide trình bày](REPORT/Data_WareHouse_Slide.pdf)
+- [Notebook XGBoost](RESULT/XGB.ipynb)
+- [Notebook MLP](RESULT/MLP.ipynb)
+
+## Hạn chế và khả năng mở rộng
+
+- Các CSV trong repository là dữ liệu đã chuẩn bị; không có toàn bộ dữ liệu nguồn để tái chạy từ đầu.
+- Để chạy lại ETL cần cấu hình PostgreSQL, SQL Server và Pentaho theo môi trường cài đặt.
+- Trang dự đoán hiện là demo. Repository chưa kèm đầy đủ artifact encoder/scaler để tái tạo mọi bước tiền xử lý; đầu vào cần khớp với cách mã hóa và chuẩn hóa lúc huấn luyện.
+- Có thể cải thiện đánh giá bằng cách tăng kích thước tập holdout, kiểm soát phân tầng lớp và lưu toàn bộ pipeline tiền xử lý cùng model.
